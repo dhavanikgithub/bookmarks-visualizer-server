@@ -25,6 +25,32 @@ const getMetaTagContent = ($, name) => {
            $(`meta[property="og:${name}"]`).attr('content') || '';
 };
 
+function isAbsoluteURL(url) {
+    // Regular expression to test if the URL starts with a scheme followed by '://'
+    const regex = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//;
+    return regex.test(url);
+}
+
+function toAbsoluteURL(baseURL, relativeURL) {
+    try {
+        const absoluteURL = new URL(relativeURL, baseURL);
+        return absoluteURL.href;
+    } catch (e) {
+        console.error('Invalid URL:', e);
+        return null;
+    }
+}
+
+function isValidURL(string) {
+    try {
+        // Attempt to create a new URL object with a base URL to handle relative URLs
+        new URL(string, 'http://example.com');
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 const getBase64Image = async (url) => {
     const response = await axiosInstance.get(url, { responseType: 'arraybuffer' });
     const buffer = Buffer.from(response.data, 'binary');
@@ -42,26 +68,57 @@ app.get('/fetch-url', async (req, res) => {
 
     try {
         const response = await axiosInstance.get(url);
+        console.log("Response fetched")
         const html = response.data;
+        console.log("HTML fetched")
         const $ = cheerio.load(html);
-
+        console.log("$ loaded")
         const title = $('title').text() || getMetaTagContent($, 'title');
+        console.log("Title fetched")
         const description = getMetaTagContent($, 'description');
+        console.log("Description fetched")
         let imageUrl = $('link[rel="image_src"]').attr('href') || getMetaTagContent($, 'image');
+        console.log("Image fetched")
         let faviconUrl = $('link[rel="icon"]').attr('href') || $('link[rel="shortcut icon"]').attr('href');
+        console.log("Favicon fetched")
         const imageAlt = getMetaTagContent($, 'image:alt');
-
+        console.log("Image alt fetched")
         if (imageUrl) {
-            imageUrl = await getBase64Image(imageUrl);
+            try {
+                imageUrl = await getBase64Image(imageUrl);
+                console.log("imageUrl getBase64Image loaded")
+            } catch (error) {
+                console.error('Error fetching imageUrl:', error.message);
+            }
+            console.log("imageUrl getBase64Image loaded")
         } else {
             const screenshotResponse = await axiosInstance.get(`http://localhost:3001/screenshot?url=${encodeURIComponent(url)}`, { responseType: 'arraybuffer' });
+            console.log("screenshotResponse loaded")
             const buffer = Buffer.from(screenshotResponse.data, 'binary');
+            console.log("Buffer loaded")
             const mimeType = screenshotResponse.headers['content-type'];
+            console.log("mimeType loaded")
             imageUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+            console.log("imageUrl loaded")
         }
 
         if (faviconUrl) {
-            faviconUrl = await getBase64Image(faviconUrl);
+            try {
+                faviconUrl = await getBase64Image(faviconUrl);
+                console.log("faviconUrl getBase64Image loaded")
+            } catch (error) {
+                console.error('Error fetching faviconUrl:', error.message);
+            }
+        }
+        if(isValidURL(faviconUrl)){
+            if(!isAbsoluteURL(faviconUrl)){
+                faviconUrl = toAbsoluteURL(url, faviconUrl);
+            }
+        }
+        if(isValidURL(imageUrl)){
+            if(!isAbsoluteURL(imageUrl)){
+                imageUrl = toAbsoluteURL(url, imageUrl);
+            }
         }
 
         res.json({ title, description, imageUrl, faviconUrl, imageAlt });
