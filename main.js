@@ -16,72 +16,60 @@ app.use((req, res, next) => {
     next();
 });
 
+const axiosInstance = axios.create({
+    headers: { 'Content-Type': 'application/json' },
+});
+
+const getMetaTagContent = ($, name) => {
+    return $(`meta[name="${name}"]`).attr('content') ||
+           $(`meta[property="og:${name}"]`).attr('content') || '';
+};
+
+const getBase64Image = async (url) => {
+    const response = await axiosInstance.get(url, { responseType: 'arraybuffer' });
+    const buffer = Buffer.from(response.data, 'binary');
+    const mimeType = response.headers['content-type'];
+    return `data:${mimeType};base64,${buffer.toString('base64')}`;
+};
+
 app.get('/fetch-url', async (req, res) => {
     const { url } = req.query;
-    console.log(url)
+    console.log(url);
+
+    if (!url) {
+        return res.status(400).json({ error: 'URL parameter is required' });
+    }
+
     try {
-        const response = await axios.get(url);
+        const response = await axiosInstance.get(url);
         const html = response.data;
         const $ = cheerio.load(html);
-        let title = $('title').text();
-        if (!title) {
 
-            title = $('meta[name="title"]').attr('content');
-        }
-        if (!title) {
-            title = $('meta[property="og:title"]').attr('content');
-        }
-        let description = $('meta[name="description"]').attr('content');
-        if (!description) {
-            description = $('meta[property="og:description"]').attr('content');
-        }
-        let imageUrl = $('link[rel="image_src"]').attr('href');
-        if (!imageUrl) {
-            imageUrl = $('meta[property="og:image"]').attr('content');
-        }
-        let faviconUrl = $('link[rel="icon"]').attr('href');
-        if (!faviconUrl) {
-            faviconUrl = $('link[rel="shortcut icon"]').attr('href');
-        }
-        let imageAlt = $('meta[property="og:image:alt"]').attr('content');
-        if(imageUrl)
-        {
-            const res = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-            const buffer = Buffer.from(res.data, 'binary');
-            const base64 = buffer.toString('base64');
-            const mimeType = response.headers['content-type'];
-            imageUrl = `data:${mimeType};base64,${base64}`
-        }
-        if(faviconUrl){
-            const res = await axios.get(faviconUrl, { responseType: 'arraybuffer' });
-            const buffer = Buffer.from(res.data, 'binary');
-            const base64 = buffer.toString('base64');
-            const mimeType = response.headers['content-type'];
-            faviconUrl = `data:${mimeType};base64,${base64}`
-        }
-        if(!imageUrl){
-            const res = await axios.get("http://localhost:3001/screenshot?url=" + encodeURIComponent(url), { responseType: 'arraybuffer' });
-            const buffer = Buffer.from(res.data, 'binary');
-            const base64 = buffer.toString('base64');
-            const mimeType = response.headers['content-type'];
-            imageUrl = `data:${mimeType};base64,${base64}`
-        }
-        
-        res.json({
-            title,
-            description,
-            imageUrl,
-            faviconUrl,
-            imageAlt
-        });
+        const title = $('title').text() || getMetaTagContent($, 'title');
+        const description = getMetaTagContent($, 'description');
+        let imageUrl = $('link[rel="image_src"]').attr('href') || getMetaTagContent($, 'image');
+        let faviconUrl = $('link[rel="icon"]').attr('href') || $('link[rel="shortcut icon"]').attr('href');
+        const imageAlt = getMetaTagContent($, 'image:alt');
 
+        if (imageUrl) {
+            imageUrl = await getBase64Image(imageUrl);
+        } else {
+            const screenshotResponse = await axiosInstance.get(`http://localhost:3001/screenshot?url=${encodeURIComponent(url)}`, { responseType: 'arraybuffer' });
+            const buffer = Buffer.from(screenshotResponse.data, 'binary');
+            const mimeType = screenshotResponse.headers['content-type'];
+            imageUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+        }
+
+        if (faviconUrl) {
+            faviconUrl = await getBase64Image(faviconUrl);
+        }
+
+        res.json({ title, description, imageUrl, faviconUrl, imageAlt });
     } catch (error) {
-        console.error('Error fetching URL:', error);
+        console.error('Error fetching URL:', error.message);
         res.status(500).json({ error: 'Failed to fetch URL' });
     }
 });
-
-
 
 app.get('/screenshot', async (req, res) => {
     const { url } = req.query;
@@ -101,7 +89,7 @@ app.get('/screenshot', async (req, res) => {
         res.setHeader('Content-Type', 'image/png');
         res.send(screenshot);
     } catch (error) {
-        console.error('Error capturing screenshot:', error);
+        console.error('Error capturing screenshot:', error.message);
         res.status(500).json({ error: 'Failed to capture screenshot' });
     }
 });
