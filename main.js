@@ -123,8 +123,13 @@ app.get('/fetch-url', async (req, res) => {
 
         res.json({ title, description, imageUrl, faviconUrl, imageAlt });
     } catch (error) {
-        console.error('Error fetching URL:', error.message);
-        res.status(500).json({ error: 'Failed to fetch URL' });
+        try {
+            
+            console.error('Failed to fetch URL: '+error.response.statusText);
+            res.status(error.response.status).json({ error: 'Failed to fetch URL: '+error.response.statusText});
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to fetch URL' });
+        }
     }
 });
 
